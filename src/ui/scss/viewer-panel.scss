@@ -1,0 +1,124 @@
+@use 'colors.scss' as *;
+
+// In viewer mode: CSS is the only reliable way to hide PCUI panels —
+// setting .hidden = true via JS can be reverted by internal PCUI event handlers.
+#editor-container.viewer-mode {
+    // 70/30 flex split for the 3D viewport
+    #main-container {
+        width: auto;
+        flex: 1 1 0%;
+    }
+
+    // Hide all editor-specific UI panels
+    #right-toolbar,
+    #bottom-toolbar,
+    #status-bar,
+    #scene-panel,
+    #view-panel,
+    #color-panel,
+    #mode-toggle,
+    #menu,
+    #app-label,
+    #data-panel,
+    #timeline-panel,
+    #view-cube-container {
+        display: none !important;
+    }
+}
+
+#viewer-panel {
+    flex: 0 0 30%;
+    width: 30%;
+    height: 100%;
+    display: flex;
+    flex-direction: column;
+    background-color: $bcg-darkest;
+    border-left: 1px solid $bcg-light;
+    overflow: hidden;
+}
+
+#viewer-panel-header-row {
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    padding: 8px 12px;
+    border-bottom: 1px solid $bcg-light;
+    flex-shrink: 0;
+    gap: 8px;
+}
+
+#viewer-panel-header {
+    flex: 1 1 0%;
+    font-size: 13px;
+    font-weight: 600;
+    color: $text-primary;
+    letter-spacing: 0.5px;
+}
+
+#viewer-open-btn {
+    background-color: $bcg-dark;
+    border: 1px solid $bcg-lighter;
+    border-radius: 4px;
+    color: $text-secondary;
+    cursor: pointer;
+    font-size: 11px;
+    padding: 3px 10px;
+    flex-shrink: 0;
+
+    &:hover {
+        background-color: $bcg-lighter;
+        color: $text-primary;
+    }
+}
+
+#viewer-panel-list {
+    flex: 1 1 0%;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 4px 0;
+
+    &::-webkit-scrollbar {
+        width: 6px;
+    }
+
+    &::-webkit-scrollbar-track {
+        background: transparent;
+    }
+
+    &::-webkit-scrollbar-thumb {
+        background: $bcg-light;
+        border-radius: 3px;
+    }
+}
+
+#viewer-empty-state {
+    padding: 24px 16px;
+    color: $text-secondary;
+    font-size: 12px;
+    text-align: center;
+    line-height: 1.6;
+
+    strong {
+        color: $text-primary;
+    }
+}
+
+.viewer-unit-item {
+    padding: 8px 16px;
+    color: $text-secondary;
+    cursor: pointer;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+
+    &:hover {
+        background-color: $bcg-dark;
+        color: $text-primary;
+    }
+
+    &.selected {
+        background-color: $bcg-darker;
+        color: $clr-hilight;
+        font-weight: 600;
+    }
+}

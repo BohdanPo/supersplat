@@ -28,8 +28,12 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     // get the list of selected splats (currently limited to just a single one)
     const selectedSplats = () => {
-        const selected = events.invoke('selection') as Splat;
-        return selected?.visible ? [selected] : [];
+        const selected = events.invoke('selection');
+        // Only return Splat elements — Models/Units are not gaussian-splat data
+        if (selected?.type === ElementType.splat && (selected as Splat).visible) {
+            return [selected as Splat];
+        }
+        return [];
     };
 
     let lastExportCursor = 0;
@@ -181,7 +185,16 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
 
     // camera.focus
 
-    events.on('camera.focus', () => {
+    events.on('camera.focus', (boundOverride?: { center: Vec3, halfExtents: Vec3 }) => {
+        if (boundOverride) {
+            scene.camera.focus({
+                focalPoint: boundOverride.center,
+                radius: boundOverride.halfExtents.length(),
+                speed: 1
+            });
+            return;
+        }
+
         const splat = selectedSplats()[0];
         if (splat) {
             // use current bounds (caller should have awaited the operation that changed data)
@@ -199,6 +212,17 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
                 radius: bound.halfExtents.length() * vec2.x,
                 speed: 1
             });
+        } else {
+            // Non-splat element selected (Model/Unit) — focus on its world bound
+            const selected = events.invoke('selection');
+            const bound = selected?.worldBound;
+            if (bound) {
+                scene.camera.focus({
+                    focalPoint: bound.center,
+                    radius: bound.halfExtents.length(),
+                    speed: 1
+                });
+            }
         }
     });
 
@@ -756,6 +780,11 @@ const registerEditorEvents = (events: Events, editHistory: EditHistory, scene: S
         events.fire('camera.setBound', docView.showBound);
         events.fire('camera.setShowPoses', docView.showCameraPoses ?? false);
         events.fire('camera.setFlySpeed', docView.flySpeed);
+    });
+
+    // Unit system — trigger re-render whenever unit state changes
+    ['unit.hovered', 'unit.selected', 'unit.filtered', 'units.loaded'].forEach(evt => {
+        events.on(evt, () => { scene.forceRender = true; });
     });
 };
 

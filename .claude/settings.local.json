@@ -1,0 +1,17 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(find /c/VS_Workspaces/supersplat/src/ui -name \"*.ts\" -exec wc -l {} +)",
+      "Bash(grep -n \"@playcanvas/pcui\\\\|import.*from.*pcui\" /c/VS_Workspaces/supersplat/src/ui/*.ts)",
+      "Bash(grep -n \"media\\\\|responsive\\\\|@media\" /c/VS_Workspaces/supersplat/src/ui/scss/*.scss)",
+      "WebFetch(domain:developer.playcanvas.com)",
+      "WebFetch(domain:www.npmjs.com)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:raw.githubusercontent.com)",
+      "WebSearch",
+      "Bash(npm run:*)",
+      "Bash(npx tsc:*)",
+      "Bash(ls c:/VS_Workspaces/supersplat/src/*.ts)"
+    ]
+  }
+}

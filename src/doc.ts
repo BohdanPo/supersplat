@@ -1,12 +1,16 @@
 import { ZipFileSystem, ZipReadFileSystem } from '@playcanvas/splat-transform';
+import { Asset } from 'playcanvas';
 
+import { ElementType } from './element';
 import { Events } from './events';
 import { BrowserFileSystem, BlobReadSource } from './io';
+import { Model } from './model';
 import { recentFiles } from './recent-files';
 import { Scene } from './scene';
 import { Splat } from './splat';
 import { serializePly } from './splat-serialize';
 import { Transform } from './transform';
+import { UnitManager } from './unit-manager';
 import { localize } from './ui/localization';
 
 // ts compiler and vscode find this type, but eslint does not
@@ -80,6 +84,10 @@ const registerDocEvents = (scene: Scene, events: Events) => {
         events.fire('camera.reset');
         events.fire('doc.setName', null);
         documentFileHandle = null;
+
+        // Clear unit highlights
+        const unitManager = events.invoke('unitManager') as UnitManager | null;
+        if (unitManager) unitManager.clearAll();
     };
 
     // load the document from the given file
@@ -112,6 +120,49 @@ const registerDocEvents = (scene: Scene, events: Events) => {
                 await scene.add(splat);
 
                 splat.docDeserialize(splatSettings);
+            }
+
+            // Restore GLB models (v1+ of our custom extension to the format)
+            if (Array.isArray(document.models)) {
+                for (let i = 0; i < document.models.length; ++i) {
+                    const m = document.models[i];
+                    const filename = `model_${i}.glb`;
+
+                    try {
+                        const modelSource = await zipFs.createSource(filename);
+                        const modelBytes = await modelSource.read().readAll();
+                        modelSource.close();
+
+                        const rawData = modelBytes.buffer.slice(modelBytes.byteOffset, modelBytes.byteOffset + modelBytes.byteLength) as ArrayBuffer;
+                        const url = URL.createObjectURL(new Blob([rawData], { type: 'model/gltf-binary' }));
+
+                        const asset = new Asset(m.name, 'container', { url, filename });
+                        const model = new Model(m.name, asset);
+                        model.rawData = rawData;
+
+                        await scene.add(model);
+                        URL.revokeObjectURL(url);
+
+                        // Restore transform
+                        if (m.position) model.entity?.setLocalPosition(m.position[0], m.position[1], m.position[2]);
+                        if (m.rotation) model.entity?.setLocalRotation(m.rotation[0], m.rotation[1], m.rotation[2], m.rotation[3]);
+                        if (m.scale)    model.entity?.setLocalScale(m.scale[0], m.scale[1], m.scale[2]);
+                        if (typeof m.visible === 'boolean') model.visible = m.visible;
+
+                        console.log(`[doc] Restored model '${m.name}'`);
+                    } catch (e) {
+                        console.warn(`[doc] Could not restore model_${i}.glb:`, e);
+                    }
+                }
+            }
+
+            // Restore unit mappings (v1+ of our custom extension to the format)
+            if (document.unitsData) {
+                const unitManager = events.invoke('unitManager') as UnitManager;
+                if (unitManager) {
+                    await unitManager.load(document.unitsData);
+                    console.log(`[doc] Restored units: ${(document.unitsData.mappings ?? document.unitsData.units ?? []).length} entries`);
+                }
             }
 
             // FIXME: trigger scene bound calc in a better way
@@ -152,14 +203,28 @@ const registerDocEvents = (scene: Scene, events: Events) => {
 
         try {
             const splats = events.invoke('scene.allSplats') as Splat[];
+            const models = scene.getElementsByType(ElementType.model) as Model[];
+            const unitManager = events.invoke('unitManager') as UnitManager | null;
+
+            const pack3 = (v: { x: number, y: number, z: number }) => [v.x, v.y, v.z];
+            const pack4 = (q: { x: number, y: number, z: number, w: number }) => [q.x, q.y, q.z, q.w];
 
             const document = {
-                version: 0,
+                version: 1,
                 camera: scene.camera.docSerialize(),
                 view: events.invoke('docSerialize.view'),
                 poseSets: events.invoke('docSerialize.poseSets'),
                 timeline: events.invoke('docSerialize.timeline'),
-                splats: splats.map(s => s.docSerialize())
+                splats: splats.map(s => s.docSerialize()),
+                models: models.map((m, i) => ({
+                    index: i,
+                    name: m.name,
+                    visible: m.visible,
+                    position: m.entity ? pack3(m.entity.getLocalPosition()) : [0, 0, 0],
+                    rotation: m.entity ? pack4(m.entity.getLocalRotation()) : [0, 0, 0, 1],
+                    scale:    m.entity ? pack3(m.entity.getLocalScale())    : [1, 1, 1]
+                })),
+                unitsData: unitManager ? unitManager.serializeData() : null
             };
 
             const serializeSettings = {
@@ -184,6 +249,18 @@ const registerDocEvents = (scene: Scene, events: Events) => {
             // Write each splat as PLY
             for (let i = 0; i < splats.length; ++i) {
                 await serializePly([splats[i]], serializeSettings, zipFs, `splat_${i}.ply`);
+            }
+
+            // Write each GLB model (only if we have the raw bytes)
+            for (let i = 0; i < models.length; ++i) {
+                const rawData = models[i].rawData;
+                if (rawData) {
+                    const modelWriter = await zipFs.createWriter(`model_${i}.glb`);
+                    await modelWriter.write(new Uint8Array(rawData));
+                    await modelWriter.close();
+                } else {
+                    console.warn(`[doc] Model '${models[i].name}' has no raw data — skipping from save`);
+                }
             }
 
             // Close zip (also closes underlying browser writer)

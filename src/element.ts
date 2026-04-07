@@ -2,6 +2,7 @@ import { BoundingBox, Quat, Vec3 } from 'playcanvas';
 
 import { Scene } from './scene';
 import { Serializer } from './serializer';
+import { Transform } from './transform';
 
 enum ElementType {
     camera = 'camera',
@@ -9,6 +10,7 @@ enum ElementType {
     splat = 'splat',
     shadow = 'shadow',
     debug = 'debug',
+    unit = 'unit',
     other = 'other'
 }
 
@@ -18,6 +20,7 @@ const ElementTypeList = [
     ElementType.splat,
     ElementType.shadow,
     ElementType.debug,
+    ElementType.unit,
     ElementType.other
 ];
 
@@ -58,6 +61,14 @@ class Element {
     onRemoved(element: Element) {}
 
     move(position?: Vec3, rotation?: Quat, scale?: Vec3) {}
+
+    // Subclasses that have an entity should override this to place the transform pivot.
+    // Default: no-op (pivot stays wherever it was last placed).
+    getPivot(_mode: 'center' | 'boundCenter', _selection: boolean, _result: Transform) {}
+
+    // Subclasses should override to reflect actual visibility. Default: always visible.
+    get visible(): boolean { return true; }
+    set visible(_value: boolean) {}
 
     get worldBound(): BoundingBox | null {
         return null;

@@ -1,6 +1,7 @@
 import { ColorPicker, Container, Label, SliderInput } from '@playcanvas/pcui';
 import { Color } from 'playcanvas';
 
+import { ElementType } from '../element';
 import { Events } from '../events';
 import { localize } from './localization';
 import { Tooltips } from './tooltips';
@@ -393,7 +394,9 @@ class ColorPanel extends Container {
             }
         });
 
-        events.on('selection.changed', (splat) => {
+        events.on('selection.changed', (element) => {
+            // Only apply color adjustments to Splat elements
+            const splat = element?.type === ElementType.splat ? element as Splat : null;
             selected = splat;
             updateUIFromState(splat);
         });

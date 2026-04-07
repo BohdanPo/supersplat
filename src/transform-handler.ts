@@ -1,4 +1,5 @@
 import { EntityTransformHandler } from './entity-transform-handler';
+import { Element, ElementType } from './element';
 import { Events } from './events';
 import { registerPivotEvents } from './pivot';
 import { Splat } from './splat';
@@ -36,12 +37,14 @@ const registerTransformHandlerEvents = (events: Events) => {
     const entityTransformHandler = new EntityTransformHandler(events);
     const splatsTransformHandler = new SplatsTransformHandler(events);
 
-    const update = (splat: Splat) => {
+    const update = (element: Element) => {
         pop();
-        if (splat) {
-            if (splat.numSelected > 0) {
+        if (element) {
+            // Splat with individual gaussians selected → use splats handler
+            if (element.type === ElementType.splat && (element as Splat).numSelected > 0) {
                 push(splatsTransformHandler);
             } else {
+                // All other cases (entity-level transform): splat with no selection, model, unit
                 push(entityTransformHandler);
             }
         }

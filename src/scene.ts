@@ -24,6 +24,7 @@ import { Outline } from './outline';
 import { PCApp } from './pc-app';
 import { SceneConfig } from './scene-config';
 import { SceneState } from './scene-state';
+import { Model } from './model';
 import { Splat } from './splat';
 import { SplatOverlay } from './splat-overlay';
 import { Underlay } from './underlay';
@@ -240,6 +241,11 @@ class Scene {
         splats.forEach((splat) => {
             this.remove(splat);
             (splat as Splat).destroy();
+        });
+
+        const models = this.getElementsByType(ElementType.model);
+        models.forEach((model) => {
+            (model as Model).destroy();
         });
     }
 

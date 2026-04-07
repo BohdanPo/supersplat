@@ -8,7 +8,8 @@ const localizeInit = () => {
     .use(LanguageDetector)
     .init({
         detection: {
-            order: ['querystring', /* 'cookie', 'localStorage', 'sessionStorage',*/ 'navigator', 'htmlTag']
+            // Only allow querystring override (e.g. ?lng=ru); never auto-detect from browser/OS
+            order: ['querystring']
         },
         backend: {
             loadPath: './static/locales/{{lng}}.json'

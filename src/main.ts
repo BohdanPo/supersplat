@@ -8,6 +8,7 @@ import { registerEditorEvents } from './editor';
 import { Events } from './events';
 import { initFileHandler } from './file-handler';
 import { registerIframeApi } from './iframe-api';
+import { UnitManager } from './unit-manager';
 import { registerPlySequenceEvents } from './ply-sequence';
 import { registerPublishEvents } from './publish';
 import { registerRenderEvents } from './render';
@@ -102,8 +103,10 @@ const main = async () => {
     const shortcutManager = new ShortcutManager(events);
     events.function('shortcutManager', () => shortcutManager);
 
-    // editor ui
-    const editorUI = new EditorUI(events);
+    // editor ui — mode is controlled by ?mode=viewer or ?project=URL param
+    const projectUrl = url.searchParams.get('project');
+    const mode = (url.searchParams.get('mode') === 'viewer' || !!projectUrl) ? 'viewer' : 'editor';
+    const editorUI = new EditorUI(events, mode);
 
     // create the graphics device
     const graphicsDevice = await createGraphicsDevice(editorUI.canvas, {
@@ -242,8 +245,29 @@ const main = async () => {
     registerRenderEvents(scene, events);
     initFileHandler(scene, events, editorUI.appContainer.dom);
 
+    // unit highlight system
+    const unitManager = new UnitManager(scene, events);
+    events.function('unitManager', () => unitManager);
+
     // load async models
     scene.start();
+
+    // auto-load project from ?project=URL (implies viewer mode)
+    if (projectUrl) {
+        events.fire('startSpinner');
+        try {
+            const response = await fetch(projectUrl);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            const blob = await response.blob();
+            const filename = projectUrl.split('/').pop()?.split('?')[0] || 'scene.ssproj';
+            const file = new File([blob], filename);
+            await events.invoke('doc.load', file);
+        } catch (e) {
+            console.error('[project] Failed to load project URL:', e);
+        } finally {
+            events.fire('stopSpinner');
+        }
+    }
 
     // handle load params
     const loadList = url.searchParams.getAll('load');

@@ -1,6 +1,7 @@
 import { Mat4, Quat, Vec3 } from 'playcanvas';
 
 import { PlacePivotOp, EntityTransformOp, MultiOp } from './edit-ops';
+import { Element } from './element';
 import { Events } from './events';
 import { Pivot } from './pivot';
 import { Splat } from './splat';
@@ -13,7 +14,7 @@ const transform = new Transform();
 
 class EntityTransformHandler implements TransformHandler {
     events: Events;
-    splat: Splat;
+    splat: Element;
     top: EntityTransformOp;
     pop: PlacePivotOp;
     bindMat = new Mat4();
@@ -63,7 +64,7 @@ class EntityTransformHandler implements TransformHandler {
     }
 
     activate() {
-        this.splat = this.events.invoke('selection') as Splat;
+        this.splat = this.events.invoke('selection') as Element;
         if (this.splat) {
             this.placePivot();
         }
@@ -76,7 +77,8 @@ class EntityTransformHandler implements TransformHandler {
     start() {
         const pivot = this.events.invoke('pivot') as Pivot;
         const { transform } = pivot;
-        const { entity } = this.splat;
+        // entity lives on subclasses (Splat, Model, Unit) — not on Element base
+        const entity = (this.splat as any).entity;
 
         // calculate bind matrix
         this.bindMat.setTRS(transform.position, transform.rotation, transform.scale);

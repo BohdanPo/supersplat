@@ -3,7 +3,9 @@ import { Container, Label, Element as PcuiElement, TextInput } from '@playcanvas
 import { SplatRenameOp } from '../edit-ops';
 import { Element, ElementType } from '../element';
 import { Events } from '../events';
+import { Model } from '../model';
 import { Splat } from '../splat';
+import { UnitManager } from '../unit-manager';
 import deleteSvg from './svg/delete.svg';
 import hiddenSvg from './svg/hidden.svg';
 import shownSvg from './svg/shown.svg';
@@ -174,6 +176,9 @@ class SplatList extends Container {
         super(args);
 
         const items = new Map<Splat, SplatItem>();
+        const modelItems = new Map<Model, SplatItem>();
+        let unitGroupItem: SplatItem | null = null;
+        let unitCount = 0;
         let soloMode = false;
         const savedVisibility = new Map<Splat, boolean>();
 
@@ -183,6 +188,21 @@ class SplatList extends Container {
         });
 
         events.on('scene.elementAdded', (element: Element) => {
+            if (element.type === ElementType.model) {
+                const model = element as Model;
+                const item = new SplatItem(model.name, edit);
+                this.append(item);
+                modelItems.set(model, item);
+
+                item.on('visible', () => { model.visible = true; });
+                item.on('invisible', () => { model.visible = false; });
+            }
+
+            if (element.type === ElementType.unit) {
+                unitCount++;
+                // group item label updated by units.loaded
+            }
+
             if (element.type === ElementType.splat) {
                 const splat = element as Splat;
                 const item = new SplatItem(splat.name, edit);
@@ -212,6 +232,23 @@ class SplatList extends Container {
         });
 
         events.on('scene.elementRemoved', (element: Element) => {
+            if (element.type === ElementType.model) {
+                const model = element as Model;
+                const item = modelItems.get(model);
+                if (item) {
+                    this.remove(item);
+                    modelItems.delete(model);
+                }
+            }
+
+            if (element.type === ElementType.unit) {
+                unitCount = Math.max(0, unitCount - 1);
+                if (unitCount === 0 && unitGroupItem) {
+                    this.remove(unitGroupItem);
+                    unitGroupItem = null;
+                }
+            }
+
             if (element.type === ElementType.splat) {
                 const splat = element as Splat;
                 const item = items.get(splat);
@@ -223,17 +260,42 @@ class SplatList extends Container {
             }
         });
 
-        events.on('selection.changed', (selection: Splat, prev: Splat) => {
+        // Create/update the "Unit Highlights" group item when units are loaded
+        events.on('units.loaded', (ids: string[]) => {
+            unitCount = ids.length;
+            if (unitGroupItem) {
+                unitGroupItem.name = `Unit Highlights (${ids.length})`;
+            } else if (ids.length > 0) {
+                unitGroupItem = new SplatItem(`Unit Highlights (${ids.length})`, edit);
+                this.append(unitGroupItem);
+
+                unitGroupItem.on('visible', () => {
+                    const unitManager = events.invoke('unitManager') as UnitManager;
+                    if (unitManager) unitManager.showAll();
+                });
+                unitGroupItem.on('invisible', () => {
+                    events.fire('unit.filter', []);
+                });
+            }
+        });
+
+        events.on('selection.changed', (selection: Element, prev: Element) => {
+            // Update selected highlight for splat items
             items.forEach((value, key) => {
+                value.selected = key === selection;
+            });
+            // Update selected highlight for model items
+            modelItems.forEach((value, key) => {
                 value.selected = key === selection;
             });
 
             if (soloMode) {
-                if (prev) {
-                    prev.visible = false;
+                // Solo mode only applies to splats
+                if (prev?.type === ElementType.splat) {
+                    (prev as Splat).visible = false;
                 }
-                if (selection) {
-                    selection.visible = true;
+                if (selection?.type === ElementType.splat) {
+                    (selection as Splat).visible = true;
                 }
             }
         });
@@ -271,18 +333,67 @@ class SplatList extends Container {
         });
 
         this.on('click', (item: SplatItem) => {
+            // Check splat items
             for (const [key, value] of items) {
                 if (item === value) {
                     if (soloMode && !key.visible) {
                         key.visible = true;
                     }
                     events.fire('selection', key);
-                    break;
+                    return;
                 }
+            }
+            // Check model items — models support entity-level transform
+            for (const [key, value] of modelItems) {
+                if (item === value) {
+                    events.fire('selection', key);
+                    return;
+                }
+            }
+            // Unit group item — frame camera on aggregate bound of all units
+            if (item === unitGroupItem) {
+                const unitManager = events.invoke('unitManager') as UnitManager;
+                const bound = unitManager?.getWorldBound();
+                if (bound) {
+                    events.fire('camera.focus', bound);
+                }
+                events.fire('selection', null);
             }
         });
 
         this.on('removeClicked', async (item: SplatItem) => {
+            // Check if it's a model item
+            let model: Model | undefined;
+            for (const [key, value] of modelItems) {
+                if (item === value) { model = key; break; }
+            }
+            if (model) {
+                const result = await events.invoke('showPopup', {
+                    type: 'yesno',
+                    header: 'Remove Model',
+                    message: `Are you sure you want to remove '${model.name}' from the scene? This operation can not be undone.`
+                });
+                if (result?.action === 'yes') {
+                    model.destroy();
+                }
+                return;
+            }
+
+            // Check if it's the unit group item
+            if (item === unitGroupItem) {
+                const result = await events.invoke('showPopup', {
+                    type: 'yesno',
+                    header: 'Remove Unit Highlights',
+                    message: 'Are you sure you want to remove all unit highlights? This operation can not be undone.'
+                });
+                if (result?.action === 'yes') {
+                    const unitManager = events.invoke('unitManager') as UnitManager;
+                    if (unitManager) unitManager.destroy();
+                }
+                return;
+            }
+
+            // Otherwise it's a splat
             let splat;
             for (const [key, value] of items) {
                 if (item === value) {

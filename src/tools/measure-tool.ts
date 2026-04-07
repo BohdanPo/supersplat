@@ -2,6 +2,7 @@ import { Container, Label, NumericInput } from '@playcanvas/pcui';
 import { Entity, Mat4, Quat, TranslateGizmo, Vec3 } from 'playcanvas';
 
 import { EntityTransformOp } from '../edit-ops';
+import { ElementType } from '../element';
 import { Events } from '../events';
 import { Scene } from '../scene';
 import { Splat } from '../splat';
@@ -154,8 +155,9 @@ class MeasureTool {
             events.invoke('pivot').end();
         });
 
-        events.on('selection.changed', (selection: Splat) => {
-            splat = selection;
+        events.on('selection.changed', (selection) => {
+            // Only work with Splat elements — Models/Units have no measure points
+            splat = selection?.type === ElementType.splat ? selection as Splat : null;
             if (active) {
                 // for now we always deactivate the tool so the current transform handler remains in place
                 events.fire('tool.deactivate');

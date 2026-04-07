@@ -4,6 +4,7 @@ import { Mat4, path, Vec3 } from 'playcanvas';
 import { DataPanel } from './data-panel';
 import { Events } from '../events';
 import { AboutPopup } from './about-popup';
+import { ViewerPanel } from './viewer-panel';
 import { BottomToolbar } from './bottom-toolbar';
 import { ColorPanel } from './color-panel';
 import { ExportPopup } from './export-popup';
@@ -42,7 +43,7 @@ class EditorUI {
     canvas: HTMLCanvasElement;
     popup: Popup;
 
-    constructor(events: Events) {
+    constructor(events: Events, mode: 'editor' | 'viewer' = 'editor') {
         // favicon
         const link = document.createElement('link');
         link.rel = 'icon';
@@ -170,6 +171,31 @@ class EditorUI {
         });
 
         editorContainer.append(mainContainer);
+
+        // Viewer mode: hide all editor-specific UI and add apartment list panel on the right
+        if (mode === 'viewer') {
+            appLabel.hidden = true;
+            scenePanel.hidden = true;
+            viewPanel.hidden = true;
+            colorPanel.hidden = true;
+            bottomToolbar.hidden = true;
+            rightToolbar.hidden = true;
+            modeToggle.hidden = true;
+            menu.hidden = true;
+            statusBar.hidden = true;
+            timelinePanel.hidden = true;
+            dataPanel.hidden = true;
+
+            editorContainer.class.add('viewer-mode');
+
+            // Turn off the grid in viewer mode as soon as the scene is ready
+            events.once('scene.boundChanged', () => {
+                events.fire('grid.setVisible', false);
+            });
+
+            const viewerPanel = new ViewerPanel(events);
+            editorContainer.append(viewerPanel);
+        }
 
         tooltips.register(cursorLabel, localize('cursor.click-to-copy'), 'top');
 

@@ -617,6 +617,16 @@ class Camera extends Element {
             this.far = boundRadius * 2;
             this.near = this.far / (1024 * 16);
         }
+
+        const c = bound.center;
+        // Log only when clipping planes change significantly (avoids per-frame spam)
+        const prevNear = (this as any)._loggedNear;
+        const prevFar = (this as any)._loggedFar;
+        if (prevNear === undefined || Math.abs(this.near - prevNear) / (prevNear || 1) > 0.01 || Math.abs(this.far - prevFar) / (prevFar || 1) > 0.01) {
+            console.log(`[Camera] clip: near=${this.near.toExponential(3)} far=${this.far.toFixed(3)} | scene bound center=(${c.x.toFixed(2)},${c.y.toFixed(2)},${c.z.toFixed(2)}) radius=${boundRadius.toFixed(3)}`);
+            (this as any)._loggedNear = this.near;
+            (this as any)._loggedFar = this.far;
+        }
     }
 
     onPreRender() {

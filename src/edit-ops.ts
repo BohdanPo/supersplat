@@ -1,6 +1,7 @@
 import { Color, Mat4 } from 'playcanvas';
 
 import { AnimTrack } from './anim-track';
+import { Element } from './element';
 import { IndexRanges, sortedPredicate } from './index-ranges';
 import { Pivot } from './pivot';
 import { Scene } from './scene';
@@ -164,11 +165,13 @@ class ResetOp extends StateOp {
 // op for modifying a splat transform
 class EntityTransformOp {
     name = 'entityTransform';
-    splat: Splat;
+    // Typed as Element so Model/Unit undo/redo works. Field stays named 'splat'
+    // because opReferencesSplat() in edit-history.ts looks for op.splat === splat.
+    splat: Element;
     oldt: Transform;
     newt: Transform;
 
-    constructor(options: { splat: Splat, oldt: Transform, newt: Transform }) {
+    constructor(options: { splat: Element, oldt: Transform, newt: Transform }) {
         this.splat = options.splat;
         this.oldt = options.oldt;
         this.newt = options.newt;

@@ -1,11 +1,13 @@
-import { path, Quat, Vec3 } from 'playcanvas';
+import { Asset, path, Quat, Vec3 } from 'playcanvas';
 
 import { CreateDropHandler } from './drop-handler';
 import { ElementType } from './element';
 import { Events } from './events';
 import { BrowserFileSystem, MappedReadFileSystem } from './io';
+import { Model } from './model';
 import { Scene } from './scene';
 import { Splat } from './splat';
+import { UnitManager } from './unit-manager';
 import { serializePly, serializePlyCompressed, SerializeSettings, serializeSog, serializeSplat, serializeViewer, SogSettings, ViewerExportSettings } from './splat-serialize';
 import { localize } from './ui/localization';
 
@@ -82,6 +84,19 @@ const filePickerTypes: { [key: string]: FilePickerAcceptType } = {
             'text/plain': ['.txt']
         }
     },
+    'model': {
+        description: '3D Model (GLB / GLTF)',
+        accept: {
+            'model/gltf-binary': ['.glb'],
+            'model/gltf+json': ['.gltf']
+        }
+    },
+    'units': {
+        description: 'Unit Data JSON',
+        accept: {
+            'application/json': ['.units.json', '.json']
+        }
+    },
     'htmlViewer': {
         description: 'Viewer HTML',
         accept: {
@@ -104,8 +119,23 @@ const allImportTypes = {
         'image/webp': ['.webp'],
         'application/json': ['.lcc'],
         'application/octet-stream': ['.bin'],
-        'text/plain': ['.txt']
+        'text/plain': ['.txt'],
+        'model/gltf-binary': ['.glb'],
+        'model/gltf+json': ['.gltf']
     }
+};
+
+// Check whether a JSON file is unit/mapping data.
+// Supports both formats:
+//   v1.0: { "version": "1.0", "units": [ { "bbox": {...}, ... } ] }
+//   v2.0: { "version": "2.0", "mappings": [ { "mesh": {...}, "bbox": {...}, ... } ] }
+const isUnitsJson = (json: any): boolean => {
+    if (!json) return false;
+    // v2.0 — mappings array with mesh geometry
+    if (Array.isArray(json.mappings) && json.mappings.length > 0) return true;
+    // v1.0 — units array with bbox
+    if (Array.isArray(json.units) && json.units.length > 0 && json.units[0]?.bbox) return true;
+    return false;
 };
 
 // determine if all files share a common filename prefix followed by
@@ -329,7 +359,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
             // check for unrecognized file types
             for (let i = 0; i < filenames.length; i++) {
                 const filename = filenames[i].toLowerCase();
-                if (['.ssproj', '.ply', '.splat', '.sog', '.webp', 'images.txt', '.json', '.ksplat', '.spz'].every(ext => !filename.endsWith(ext))) {
+                if (['.ssproj', '.ply', '.splat', '.sog', '.webp', 'images.txt', '.json', '.ksplat', '.spz', '.glb', '.gltf'].every(ext => !filename.endsWith(ext))) {
                     await showLoadError('Unrecognized file type', filename);
                     return;
                 }
@@ -349,14 +379,95 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                 } else if (filename.endsWith('images.txt')) {
                     // load colmap frames
                     await loadImagesTxt(files[i], events);
+                } else if (filename.endsWith('.glb') || filename.endsWith('.gltf')) {
+                    // load polygon mesh model (GLB / GLTF)
+                    await importPolygonModel(files[i]);
                 } else if (filename.endsWith('.json')) {
-                    // load inria camera poses
-                    await loadCameraPoses(files[i], events);
+                    // try units data first, fall back to inria camera poses
+                    const parsed = await parseJson(files[i]);
+                    if (parsed && isUnitsJson(parsed)) {
+                        await importUnitsJson(parsed);
+                    } else if (parsed) {
+                        await loadCameraPoses(files[i], events);
+                    }
                 }
             }
         }
 
         return result;
+    };
+
+    // parse JSON from an ImportFile (handles both File contents and url)
+    const parseJson = async (file: ImportFile): Promise<any> => {
+        try {
+            if (file.contents) {
+                const text = await file.contents.text();
+                return JSON.parse(text);
+            } else if (file.url) {
+                const resp = await fetch(file.url);
+                return resp.json();
+            }
+        } catch (e) {
+            // not valid JSON — ignore silently
+        }
+        return null;
+    };
+
+    // load a GLB or GLTF polygon mesh model into the scene
+    const importPolygonModel = async (file: ImportFile, rawData?: ArrayBuffer) => {
+        console.log(`[import] GLB/GLTF: starting import of '${file.filename}'`);
+        try {
+            // Read raw bytes first (needed for project save) if not already provided
+            let bytes: ArrayBuffer | null = rawData ?? null;
+            if (!bytes && file.contents) {
+                bytes = await file.contents.arrayBuffer();
+            }
+
+            let url: string;
+            let needsRevoke = false;
+
+            if (bytes) {
+                url = URL.createObjectURL(new Blob([bytes], { type: 'model/gltf-binary' }));
+                needsRevoke = true;
+            } else if (file.contents) {
+                url = URL.createObjectURL(file.contents);
+                needsRevoke = true;
+            } else {
+                url = file.url;
+            }
+
+            const name = removeExtension(file.filename);
+            const asset = new Asset(name, 'container', { url, filename: file.filename });
+            const model = new Model(name, asset);
+            model.rawData = bytes;
+
+            await scene.add(model);
+            console.log(`[import] GLB/GLTF: '${name}' added to scene (entity: ${model.entity?.name})`);
+
+            if (needsRevoke) {
+                URL.revokeObjectURL(url);
+            }
+
+            return model;
+        } catch (error) {
+            console.error(`[import] GLB/GLTF: error loading '${file.filename}':`, error);
+            await showLoadError(error.message ?? error, file.filename);
+            return null;
+        }
+    };
+
+    // load unit data JSON and pass to the UnitManager
+    const importUnitsJson = async (data: any) => {
+        const version = data.version ?? '?';
+        const count = (data.mappings ?? data.units ?? []).length;
+        console.log(`[import] Units/Mappings JSON v${version}: ${count} entries found`);
+        const unitManager = events.invoke('unitManager') as UnitManager;
+        if (!unitManager) {
+            console.warn('[import] Units/Mappings JSON: UnitManager not available');
+            return;
+        }
+        await unitManager.load(data);
+        console.log('[import] Units/Mappings JSON: loaded successfully');
     };
 
     events.function('import', (files: ImportFile[], animationFrame = false) => {
@@ -369,7 +480,7 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
         fileSelector = document.createElement('input');
         fileSelector.setAttribute('id', 'file-selector');
         fileSelector.setAttribute('type', 'file');
-        fileSelector.setAttribute('accept', '.ply,.splat,meta.json,.json,.webp,.ssproj,.sog,.lcc,.bin,.txt,.ksplat,.spz');
+        fileSelector.setAttribute('accept', '.ply,.splat,meta.json,.json,.webp,.ssproj,.sog,.lcc,.bin,.txt,.ksplat,.spz,.glb,.gltf');
         fileSelector.setAttribute('multiple', 'true');
 
         fileSelector.onchange = () => {
@@ -435,7 +546,9 @@ const initFileHandler = (scene: Scene, events: Events, dropTarget: HTMLElement) 
                         filePickerTypes.lcc,
                         filePickerTypes.ksplat,
                         filePickerTypes.spz,
-                        filePickerTypes.indexTxt
+                        filePickerTypes.indexTxt,
+                        filePickerTypes.model,
+                        filePickerTypes.units
                     ]
                 });
 
